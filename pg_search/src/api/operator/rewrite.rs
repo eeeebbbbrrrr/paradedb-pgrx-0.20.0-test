@@ -30,7 +30,7 @@ use crate::query::proximity::ProximityClause;
 use pgrx::{IntoDatum, PgList, direct_function_call, pg_sys};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum SearchOperator {
+pub(crate) enum SearchOperator {
     Conjunction,
     Disjunction,
     Term,

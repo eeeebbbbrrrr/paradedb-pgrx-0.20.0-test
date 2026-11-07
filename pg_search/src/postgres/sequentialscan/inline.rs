@@ -27,7 +27,7 @@ use crate::postgres::rel::PgSearchRelation;
 use crate::postgres::utils::{resolve_field_value, row_to_search_document};
 use crate::postgres::var::{find_var_relation, system_column_var};
 use crate::query::SearchQueryInput;
-use crate::schema::{CategorizedFieldData, FieldSource, SearchField};
+use crate::schema::{CategorizedFieldData, FieldSource, SearchField, SearchIndexSchemaQueryExt};
 use pgrx::{IntoDatum, PgBox, PgList, PgTupleDesc, direct_function_call, pg_sys};
 use std::ptr::NonNull;
 use std::sync::OnceLock;

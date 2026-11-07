@@ -52,20 +52,34 @@ def find_bare_drops(text):
     ]
 
 
+CRATES = (
+    "common",
+    "storage",
+    "index_read",
+    "index_write",
+    "scan",
+    "planner",
+    "basescan",
+    "joinscan",
+    "pg_search",
+)
+
+
 def main():
-    """Check the matcher, then report every bare `impl Drop` under pg_search/src."""
+    """Check the matcher, then report every bare `impl Drop` across pgrx-linking crates."""
     for text, expected in SELF_TEST:
         assert len(find_bare_drops(text)) == expected, text
     bad = [
         f"{path.relative_to(REPO)}:{line}: {header}"
-        for path in sorted((REPO / "pg_search" / "src").rglob("*.rs"))
+        for crate in CRATES
+        for path in sorted((REPO / crate / "src").rglob("*.rs"))
         for line, header in find_bare_drops(path.read_text(encoding="utf-8"))
     ]
     if bad:
         print("\n".join(bad))
         print(
             f"\n{len(bad)} bare `impl Drop`. Use `impl_safe_drop!` from "
-            'pg_search/src/postgres/utils.rs, or opt out directly above the impl with "We '
+            'common/src/postgres/utils.rs, or opt out directly above the impl with "We '
             'intentionally do NOT use `impl_safe_drop!` here because ...".'
         )
     return 1 if bad else 0

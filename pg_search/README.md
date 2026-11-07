@@ -4,6 +4,62 @@ This README covers development of the `pg_search` extension. For installation, d
 
 `pg_search` is supported on official PostgreSQL Global Development Group Postgres versions, starting at PostgreSQL 15.
 
+## Crate Layout
+
+The `pg_search` extension is split into 9 workspace crates (8 internal `rlib` crates plus the top-level `pg_search` `cdylib` crate) to enable parallel compilation across independent subsystems:
+
+```text
+                       +--------------------+
+                       |       common       |
+                       +---------+----------+
+                                 |
+                       +---------v----------+
+                       |      storage       |
+                       +---------+----------+
+                                 |
+                       +---------v----------+
+                       |     index_read     |
+                       +---------+----------+
+                                 |
+          +----------------------+----------------------+
+          |                      |                      |
++---------v--------+   +---------v--------+   +---------v--------+
+|   index_write    |   |       scan       |   |     planner      |
++---------+--------+   +---------+--------+   +---------+--------+
+          |                      |                      |
+          |             +--------+--------+             |
+          |             |                 |             |
+          |             |        +--------+-------------+
+          |             |        |        |
+          |    +--------v--------v-+    +-v-----------------+
+          |    |     basescan      |    |     joinscan      |
+          |    +--------+----------+    +---------+---------+
+          |             |                         |
+          +-------------+------------+------------+
+                                     |
+                            +--------v---------+
+                            |    pg_search     |
+                            |     (cdylib)     |
+                            +------------------+
+```
+
+| Crate         | Depends On                                           | Responsibilities                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| :------------ | :--------------------------------------------------- | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `common`      | `tokenizers`, `dst`, `macros`                        | Root constants and macros (`impl_safe_drop`, `nodecast`, `debug2`), GUCs (`gucs.rs`), vector quantization primitives (`vector/*`), parallel worker registry (`parallel_worker/*`), vocabulary types (`FieldName`, `OrderByInfo`, `MvccVisibility`, `SearchFieldType`), and low-level Postgres wrappers (`postgres/{utils, catalog, node, locks, buffile, tuplesort, cost, types, types_arrow, pdb_owned_value, datetime, range, jsonb_support, composite}`). Named `common` rather than `core` because `pgrx` procedural macros expand `core::...` paths without a leading `::`. |
+| `storage`     | `common`                                             | Postgres buffer-managed block storage (`postgres/storage/*`), index relation and reloption handling (`postgres/{rel, options, access, index, deparse, serializable, pgstat}.rs`), and `SearchIndexSchema` (`schema/mod.rs`).                                                                                                                                                                                                                                                                                                                                                     |
+| `index_read`  | `common`, `storage`                                  | Query parsing and compilation (`query/*`), Tantivy index directory and MVCC snapshot readers (`index/directory/*`, `index/reader/*`, `index/writer/*`, `index/segment_pruning/*`, `index/ctid_map/*`, `index/stats/*`), heap visibility and tuple fetching (`postgres/heap.rs`), and shared parallel scan state (`postgres/parallel.rs`).                                                                                                                                                                                                                                        |
+| `index_write` | `common`, `storage`, `index_read`                    | Index build, parallel build, vector IVF/k-d tree clustering (`superkmeans` is isolated here), segment merge policy, `INSERT`, `DELETE`, `VACUUM`, and background mutable segment sweeps.                                                                                                                                                                                                                                                                                                                                                                                         |
+| `scan`        | `common`, `storage`, `index_read`                    | DataFusion physical execution operators (`scan/*`), custom aggregate and Top-K UDAFs (`postgres/customscan/datafusion/{topk_agg, numeric_agg, cardinality_agg, carry_value, timestamp_to_date, spill, memory}.rs`), deferred visibility filtering (`postgres/customscan/joinscan/{visibility_filter, range_partitioning_rule}.rs`), and DSM ring streams (`postgres/customscan/mpp/dsm_stream.rs`).                                                                                                                                                                              |
+| `planner`     | `common`, `storage`, `index_read`                    | Tantivy-native aggregation execution (`aggregate/*`), Postgres planner inspection, qualifier extraction, path construction, projections (`score`, `snippet`, `window_agg`), and single-table Tantivy `AggregateScan` planning and execution.                                                                                                                                                                                                                                                                                                                                     |
+| `basescan`    | `common`, `storage`, `index_read`, `scan`, `planner` | Single-table `BaseScan` custom scan planning, execution strategies (blockwise, tuplewise, Top-K, vector), scan state, and telemetry.                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `joinscan`    | `common`, `storage`, `index_read`, `scan`, `planner` | Multi-table `JoinScan` and DataFusion `AggregateScan` planning and execution, logical/physical expression translation (`postgres/customscan/datafusion/*`, `pg_expr_udf.rs`), plan codecs (`scan/{codec, physical_codec, udf_codec}.rs`), and MPP distributed worker coordination (`postgres/customscan/mpp/*`).                                                                                                                                                                                                                                                                 |
+| `pg_search`   | All 8 sub-crates                                     | Top-level `cdylib` extension crate: `_PG_init` bootstrap, planner hook registration (`postgres/customscan/hook.rs`), index AM handler and sequential/index-only scan callbacks (`postgres/{mod, scan, index_only, sequentialscan/*}.rs`), and SQL-exported `#[pg_extern]` / `#[pg_operator]` / `extension_sql!` definitions (`api/*`).                                                                                                                                                                                                                                           |
+
+### Cross-Crate Conventions
+
+- Module overlay re-exports: Each sub-crate re-exports its upstream crates' top-level modules (`postgres`, `index`, `query`, `scan`, `schema`, `aggregate`, `api`, `gucs`, `vector`, `parallel_worker`) and overlays its own submodules so internal `crate::...` paths remain consistent across the workspace.
+- `pgrx` SQL entities: SQL-generating items (`#[pg_extern]`, `#[pg_operator]`, `#[pg_aggregate]`, `#[pg_cast]`, `#[derive(PostgresEnum)]`, `extension_sql!`) live in `pg_search` so the `cdylib` exports their C symbols and `.pgrxsc` / `__DATA,__pgrxsc` linker section entries. When a `#[derive(PostgresType)]` or `#[pg_extern]` must live in a sub-crate (for example due to Rust's orphan rules), its generated symbols must be referenced in `_SUBCRATE_PGRX_ANCHORS` in `pg_search/src/lib.rs` so the linker retains the object file from the `rlib` archive.
+
 ## Prerequisites
 
 ### Rust
@@ -93,10 +149,10 @@ After making changes to the extension code:
 
 ## Testing
 
-Unit tests live in `pg_search/src` and run with:
+Unit tests live across `pg_search` and its internal workspace crates (`common`, `storage`, `index_read`, `index_write`, `scan`, `planner`, `basescan`, `joinscan`) and run with:
 
 ```bash
-cargo test -p pg_search -- a_specific_method_to_run
+cargo test -p <crate> -- a_specific_method_to_run
 ```
 
 There are two kinds of unit tests in `pg_search`:

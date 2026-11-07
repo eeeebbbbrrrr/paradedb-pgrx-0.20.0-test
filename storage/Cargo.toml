@@ -1,0 +1,72 @@
+[package]
+name = "storage"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+
+[lints]
+workspace = true
+
+[features]
+default = ["pg18"]
+pg15 = ["pgrx/pg15", "common/pg15"]
+pg16 = ["pgrx/pg16", "common/pg16"]
+pg17 = ["pgrx/pg17", "common/pg17"]
+pg18 = ["pgrx/pg18", "common/pg18"]
+pg_test = ["dep:proptest", "common/pg_test"]
+dst = ["dst/enabled", "common/dst"]
+unsafe-postgres = ["pgrx/unsafe-postgres", "common/unsafe-postgres"]
+block_tracker = ["common/block_tracker"]
+debug-logging = ["common/debug-logging"]
+
+[dependencies]
+common = { path = "../common", default-features = false }
+anyhow.workspace = true
+arrow-array.workspace = true
+arrow-buffer.workspace = true
+arrow-schema.workspace = true
+base64.workspace = true
+bincode.workspace = true
+bitpacking.workspace = true
+bytemuck.workspace = true
+bytes.workspace = true
+chrono.workspace = true
+dst = { path = "../dst" }
+half.workspace = true
+lazy_static.workspace = true
+libc.workspace = true
+log.workspace = true
+macros = { path = "../macros" }
+once_cell.workspace = true
+ordered-float.workspace = true
+parking_lot.workspace = true
+paste.workspace = true
+pgrx.workspace = true
+postcard.workspace = true
+proptest = { workspace = true, optional = true }
+rand.workspace = true
+regex.workspace = true
+rustc-hash.workspace = true
+rustix.workspace = true
+serde.workspace = true
+serde_cbor.workspace = true
+serde_json.workspace = true
+serde_path_to_error.workspace = true
+stable_deref_trait.workspace = true
+strum.workspace = true
+tantivy.workspace = true
+tantivy-common.workspace = true
+tantivy-fst.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tokenizers = { path = "../tokenizers" }
+typetag.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+common = { path = "../common", default-features = false, features = [
+  "pg_test",
+] }
+pgrx-tests.workspace = true
+proptest.workspace = true
+rstest.workspace = true

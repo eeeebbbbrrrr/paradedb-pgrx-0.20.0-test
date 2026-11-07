@@ -15,7 +15,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 use super::anyelement_query_input_opoid;
-use crate::api::operator::{ReturnedNodePointer, estimate_selectivity, find_var_relation};
+use crate::api::operator::{
+    ReturnedNodePointer, ReturnedNodePointerSupport, estimate_selectivity, find_var_relation,
+};
 use crate::postgres::rel_get_bm25_index;
 use crate::query::SearchQueryInput;
 use crate::{PARAMETERIZED_SELECTIVITY, UNKNOWN_SELECTIVITY, nodecast};

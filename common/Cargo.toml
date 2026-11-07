@@ -1,0 +1,75 @@
+[package]
+name = "common"
+version = { workspace = true }
+edition = { workspace = true }
+license = { workspace = true }
+
+[lints]
+workspace = true
+
+[features]
+default = ["pg18"]
+pg15 = ["pgrx/pg15"]
+pg16 = ["pgrx/pg16"]
+pg17 = ["pgrx/pg17"]
+pg18 = ["pgrx/pg18"]
+pg_test = ["dep:proptest"]
+dst = ["dst/enabled"]
+unsafe-postgres = ["pgrx/unsafe-postgres"]
+block_tracker = []
+debug-logging = ["dep:env_logger"]
+
+[dependencies]
+anyhow.workspace = true
+arrow-array.workspace = true
+arrow-buffer.workspace = true
+arrow-schema.workspace = true
+arrow-select.workspace = true
+base64.workspace = true
+bigdecimal.workspace = true
+bincode.workspace = true
+bitpacking.workspace = true
+bytemuck.workspace = true
+bytes.workspace = true
+chrono.workspace = true
+datafusion.workspace = true
+decimal-bytes.workspace = true
+dst = { path = "../dst" }
+env_logger = { workspace = true, optional = true }
+futures.workspace = true
+half.workspace = true
+lazy_static.workspace = true
+libc.workspace = true
+log.workspace = true
+macros = { path = "../macros" }
+once_cell.workspace = true
+ordered-float.workspace = true
+parking_lot.workspace = true
+paste.workspace = true
+pgrx.workspace = true
+postcard.workspace = true
+proptest = { workspace = true, optional = true }
+rand.workspace = true
+regex.workspace = true
+rustc-hash.workspace = true
+rustix.workspace = true
+serde.workspace = true
+serde_cbor.workspace = true
+serde_json.workspace = true
+serde_path_to_error.workspace = true
+stable_deref_trait.workspace = true
+strum.workspace = true
+tantivy.workspace = true
+tantivy-common.workspace = true
+tantivy-fst.workspace = true
+thiserror.workspace = true
+time.workspace = true
+tokio.workspace = true
+tokenizers = { path = "../tokenizers" }
+typetag.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+pgrx-tests.workspace = true
+proptest.workspace = true
+rstest.workspace = true
