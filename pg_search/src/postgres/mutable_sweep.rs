@@ -181,15 +181,18 @@ unsafe extern "C-unwind" fn mutable_sweep_database(database: pg_sys::Datum) {
     }) else {
         return;
     };
-    // The version the installed scripts define: the crate's version in a release, or the temporary
-    // version that `cargo pgrx install` gives unreleased SQL fragments. The view reads every control
-    // file, so read it once.
-    let expected_version = BackgroundWorker::transaction(|| {
-        Spi::get_one::<String>(
-            "SELECT default_version FROM pg_catalog.pg_available_extensions WHERE name = 'pg_search'",
-        )
-        .expect("should be able to inspect pg_search's default version")
-    });
+    // Debug installs use pgrx's temporary SQL version. Release workers must match
+    // their loaded library, even when a newer package has replaced the control file.
+    let development_version = if cfg!(debug_assertions) {
+        BackgroundWorker::transaction(|| {
+            Spi::get_one::<String>(
+                "SELECT default_version FROM pg_catalog.pg_available_extensions WHERE name = 'pg_search'",
+            )
+            .expect("should be able to inspect pg_search's default version")
+        })
+    } else {
+        None
+    };
     let mut pass_context = pgrx::PgMemoryContexts::new("pg_search mutable sweep pass");
     let mut next_sweep = Instant::now();
     let mut interval = INTERVAL_MS.get();
@@ -240,7 +243,11 @@ unsafe extern "C-unwind" fn mutable_sweep_database(database: pg_sys::Datum) {
                         "SELECT max(extversion::text) FROM pg_catalog.pg_extension WHERE extname = 'pg_search'",
                     )
                     .expect("should be able to inspect pg_search version");
-                    if version.is_none() || version != expected_version {
+                    if !sweep_version_matches(
+                        version.as_deref(),
+                        env!("CARGO_PKG_VERSION"),
+                        development_version.as_deref(),
+                    ) {
                         return None;
                     }
                     let indexes = Spi::get_one::<Vec<pg_sys::Oid>>(
@@ -373,5 +380,40 @@ unsafe extern "C-unwind" fn mutable_sweep_database(database: pg_sys::Datum) {
         )) {
             return;
         }
+    }
+}
+
+fn sweep_version_matches(
+    database_version: Option<&str>,
+    library_version: &str,
+    development_version: Option<&str>,
+) -> bool {
+    database_version == Some(development_version.unwrap_or(library_version))
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::sweep_version_matches;
+
+    #[test]
+    fn release_worker_rejects_a_different_schema_version() {
+        assert!(sweep_version_matches(Some("0.26.6"), "0.26.6", None));
+        assert!(!sweep_version_matches(Some("0.26.7"), "0.26.6", None));
+        assert!(!sweep_version_matches(Some("0.26.5"), "0.26.6", None));
+        assert!(!sweep_version_matches(None, "0.26.6", None));
+    }
+
+    #[test]
+    fn debug_worker_accepts_only_its_temporary_schema_version() {
+        assert!(sweep_version_matches(
+            Some("0.26.7"),
+            "0.26.6",
+            Some("0.26.7")
+        ));
+        assert!(!sweep_version_matches(
+            Some("0.26.6"),
+            "0.26.6",
+            Some("0.26.7")
+        ));
     }
 }
