@@ -84,7 +84,7 @@ mod sql_datum_support {
 
     unsafe impl SqlTranslatable for BoostType {
         const TYPE_IDENT: &'static str = pgrx::pgrx_resolved_type!(BoostType);
-        const TYPE_ORIGIN: TypeOrigin = TypeOrigin::External;
+        const TYPE_ORIGIN: TypeOrigin = TypeOrigin::ThisExtension;
         const ARGUMENT_SQL: Result<SqlMappingRef, ArgumentError> =
             Ok(SqlMappingRef::literal("pdb.boost"));
         const RETURN_SQL: Result<ReturnsRef, ReturnsError> =
@@ -132,8 +132,7 @@ mod typedef {
             CREATE SCHEMA IF NOT EXISTS pdb;
             CREATE TYPE pdb.boost;
         "#,
-        name = "BoostType_shell",
-        creates = [Type(BoostType)]
+        name = "BoostType_shell"
     );
 
     #[pg_extern(immutable, parallel_safe)]
@@ -191,6 +190,7 @@ mod typedef {
             );
         "#,
         name = "BoostType_final",
+        creates = [Type(BoostType)],
         requires = [
             "BoostType_shell",
             boost_in,

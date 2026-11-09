@@ -540,7 +540,11 @@ pub fn is_paradedb_search_operator(opno: pg_sys::Oid) -> bool {
         return false;
     }
 
-    let operform = unsafe { &*(pg_sys::GETSTRUCT(opertup) as *mut pg_sys::FormData_pg_operator) };
+    let operform = unsafe {
+        &*pgrx::GETSTRUCT!(opertup)
+            .get()
+            .cast::<pg_sys::FormData_pg_operator>()
+    };
     let opername = pgrx::name_data_to_str(&operform.oprname);
     let oprleft = operform.oprleft;
 
@@ -577,7 +581,9 @@ pub fn operator_name_from_oid(opno: pg_sys::Oid) -> String {
         if opertup.is_null() {
             return "unknown".to_string();
         }
-        let operform = pg_sys::GETSTRUCT(opertup) as *mut pg_sys::FormData_pg_operator;
+        let operform = pgrx::GETSTRUCT!(opertup)
+            .get()
+            .cast::<pg_sys::FormData_pg_operator>();
         let name = pgrx::name_data_to_str(&(*operform).oprname).to_string();
         pg_sys::ReleaseSysCache(opertup);
         name
@@ -1266,7 +1272,7 @@ unsafe fn resolve_lhs_var_for_group(
         return var;
     }
 
-    let rte = pg_sys::rt_fetch(varno, rtable);
+    let rte = pgrx::rt_fetch!(varno, rtable).get();
     if (*rte).rtekind == pg_sys::RTEKind::RTE_GROUP {
         // PG18 introduces RTE_GROUP for GROUP BY expressions. When a Var references
         // RTE_GROUP, it points to a synthetic range table entry rather than the base

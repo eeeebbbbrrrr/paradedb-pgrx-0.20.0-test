@@ -22,6 +22,7 @@ use crate::postgres::storage::fsm::v2::V2FSM;
 use crate::postgres::storage::metadata::MetaPage;
 use crate::postgres::storage::utils::{BM25Page, RelationBufferAccess};
 use crate::postgres::storage::xlog::{XlogFlag, XlogStyle, finish_xlog};
+use pgrx::cmacros::c::Pointer;
 use pgrx::pg_sys;
 use stable_deref_trait::StableDeref;
 use std::mem::size_of;
@@ -257,7 +258,7 @@ impl Buffer {
     }
 
     pub fn page(&self) -> Page<'_> {
-        let pg_page = unsafe { pg_sys::BufferGetPage(self.pg_buffer) };
+        let pg_page = unsafe { pgrx::BufferGetPage!(self.pg_buffer).get() };
         Page {
             pg_page,
             _buffer: Some(self),
@@ -292,7 +293,7 @@ impl Buffer {
     }
 
     pub fn page_size(&self) -> pg_sys::Size {
-        unsafe { pg_sys::BufferGetPageSize(self.pg_buffer) }
+        unsafe { pgrx::BufferGetPageSize!(self.pg_buffer).get_usize() }
     }
 
     pub fn upgrade(self, bman: &mut BufferManager) -> BufferMut {
@@ -368,7 +369,9 @@ impl BufferMut {
         unsafe {
             pg_sys::PageInit(page.pg_page, page_size, size_of::<BM25PageSpecialData>());
 
-            let special = pg_sys::PageGetSpecialPointer(page.pg_page) as *mut BM25PageSpecialData;
+            let special = pgrx::PageGetSpecialPointer!(Pointer::from(page.pg_page))
+                .get()
+                .cast::<BM25PageSpecialData>();
             (*special).next_blockno = pg_sys::InvalidBlockNumber;
             (*special).xmax = pg_sys::InvalidTransactionId;
         }
@@ -553,11 +556,11 @@ impl<'a> Page<'a> {
     }
 
     pub fn is_empty(&self) -> bool {
-        unsafe { pg_sys::PageIsEmpty(self.pg_page) }
+        unsafe { pgrx::PageIsEmpty!(Pointer::from(self.pg_page)).is_true() }
     }
 
     pub fn max_offset_number(&self) -> pg_sys::OffsetNumber {
-        unsafe { pg_sys::PageGetMaxOffsetNumber(self.pg_page) }
+        unsafe { pgrx::PageGetMaxOffsetNumber!(Pointer::from(self.pg_page)).get_as() }
     }
 
     pub fn deserialize_item<T: From<PgItem>>(
@@ -576,7 +579,11 @@ impl<'a> Page<'a> {
     }
 
     pub fn special<T>(&self) -> &T {
-        unsafe { &*(pg_sys::PageGetSpecialPointer(self.pg_page) as *const T) }
+        unsafe {
+            &*pgrx::PageGetSpecialPointer!(Pointer::from(self.pg_page))
+                .get()
+                .cast::<T>()
+        }
     }
 
     pub fn as_slice(&self) -> &[u8] {
@@ -595,16 +602,27 @@ impl<'a> Page<'a> {
     }
 
     pub fn contents<T: Copy>(&self) -> T {
-        unsafe { (pg_sys::PageGetContents(self.pg_page) as *const T).read_unaligned() }
+        unsafe {
+            pgrx::PageGetContents!(Pointer::from(self.pg_page))
+                .get()
+                .cast::<T>()
+                .read_unaligned()
+        }
     }
 
     pub fn contents_ref<T>(&self) -> &'a T {
-        unsafe { &*(pg_sys::PageGetContents(self.pg_page) as *const T) }
+        unsafe {
+            &*pgrx::PageGetContents!(Pointer::from(self.pg_page))
+                .get()
+                .cast::<T>()
+        }
     }
 
     pub fn next_blockno(&self) -> pg_sys::BlockNumber {
         unsafe {
-            let special = pg_sys::PageGetSpecialPointer(self.pg_page) as *mut BM25PageSpecialData;
+            let special = pgrx::PageGetSpecialPointer!(Pointer::from(self.pg_page))
+                .get()
+                .cast::<BM25PageSpecialData>();
             (*special).next_blockno
         }
     }
@@ -617,19 +635,20 @@ pub struct PageMut<'a> {
 
 impl<'a> PageMut<'a> {
     pub fn max_offset_number(&self) -> pg_sys::OffsetNumber {
-        unsafe { pg_sys::PageGetMaxOffsetNumber(self.pg_page) }
+        unsafe { pgrx::PageGetMaxOffsetNumber!(Pointer::from(self.pg_page)).get_as() }
     }
 
     pub fn item_is_dead(&self, offno: pg_sys::OffsetNumber) -> bool {
         unsafe {
-            let item_id = pg_sys::PageGetItemId(self.pg_page, offno);
+            let item_id = pgrx::PageGetItemId!(Pointer::from(self.pg_page), offno).get();
             (*item_id).lp_flags() == pg_sys::LP_DEAD
         }
     }
 
     pub fn mark_item_dead(&mut self, offno: pg_sys::OffsetNumber) {
         self.buffer.assert_mutable();
-        let item_id = unsafe { &mut *pg_sys::PageGetItemId(self.pg_page, offno) };
+        let item_id =
+            unsafe { &mut *pgrx::PageGetItemId!(Pointer::from(self.pg_page), offno).get() };
         debug_assert!(
             item_id.lp_flags() != pg_sys::LP_DEAD,
             "item is already dead"
@@ -735,7 +754,11 @@ impl<'a> PageMut<'a> {
 
     pub fn special_mut<T>(&mut self) -> &mut T {
         self.buffer.assert_mutable();
-        let special = unsafe { &mut *(pg_sys::PageGetSpecialPointer(self.pg_page) as *mut T) };
+        let special = unsafe {
+            &mut *pgrx::PageGetSpecialPointer!(Pointer::from(self.pg_page))
+                .get()
+                .cast::<T>()
+        };
         self.buffer.dirty = true;
         special
     }
@@ -799,7 +822,9 @@ impl<'a> PageMut<'a> {
     pub fn contents_mut<T>(&mut self) -> &'a mut T {
         self.buffer.assert_mutable();
         let contents = unsafe {
-            let contents = pg_sys::PageGetContents(self.pg_page) as *mut T;
+            let contents = pgrx::PageGetContents!(Pointer::from(self.pg_page))
+                .get()
+                .cast::<T>();
 
             // adjust pd_lower at the same time
             let header = self.pg_page as *mut pg_sys::PageHeaderData;
@@ -815,7 +840,9 @@ impl<'a> PageMut<'a> {
 
     pub fn next_blockno(&self) -> pg_sys::BlockNumber {
         unsafe {
-            let special = pg_sys::PageGetSpecialPointer(self.pg_page) as *mut BM25PageSpecialData;
+            let special = pgrx::PageGetSpecialPointer!(Pointer::from(self.pg_page))
+                .get()
+                .cast::<BM25PageSpecialData>();
             (*special).next_blockno
         }
     }
@@ -1051,7 +1078,7 @@ impl BufferManager {
             }
 
             unsafe {
-                pgrx::check_for_interrupts!();
+                pgrx::check_for_interrupts();
                 pg_sys::pg_usleep(poll_us);
             }
         }

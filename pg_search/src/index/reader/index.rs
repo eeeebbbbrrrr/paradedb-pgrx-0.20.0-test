@@ -3216,7 +3216,7 @@ impl SearchIndexReader {
             stats.reset();
         }
         let on_segment = |ord: SegmentOrdinal| {
-            pgrx::check_for_interrupts!();
+            pgrx::check_for_interrupts();
             if let Some(stats) = &self.directory.io_stats {
                 stats.end_segment(self.searcher.segment_reader(ord).segment_id());
             }

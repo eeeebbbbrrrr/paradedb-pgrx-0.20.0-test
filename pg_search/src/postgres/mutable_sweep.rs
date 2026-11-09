@@ -87,7 +87,7 @@ unsafe fn connect(database: Option<pg_sys::Oid>) {
 }
 
 unsafe fn reload() {
-    check_for_interrupts!();
+    check_for_interrupts();
     if BackgroundWorker::sighup_received() {
         pg_sys::ProcessConfigFile(pg_sys::GucContext::PGC_SIGHUP);
     }
@@ -137,8 +137,9 @@ unsafe extern "C-unwind" fn mutable_sweep_launcher(_arg: pg_sys::Datum) {
                     if tuple.is_null() {
                         break;
                     }
-                    let database =
-                        &*pg_sys::GETSTRUCT(tuple).cast::<pg_sys::FormData_pg_database>();
+                    let database = &*pgrx::GETSTRUCT!(tuple)
+                        .get()
+                        .cast::<pg_sys::FormData_pg_database>();
                     if database.datallowconn
                         && !database.datistemplate
                         && database.datconnlimit >= -1
@@ -180,6 +181,15 @@ unsafe extern "C-unwind" fn mutable_sweep_database(database: pg_sys::Datum) {
     }) else {
         return;
     };
+    // The version the installed scripts define: the crate's version in a release, or the temporary
+    // version that `cargo pgrx install` gives unreleased SQL fragments. The view reads every control
+    // file, so read it once.
+    let expected_version = BackgroundWorker::transaction(|| {
+        Spi::get_one::<String>(
+            "SELECT default_version FROM pg_catalog.pg_available_extensions WHERE name = 'pg_search'",
+        )
+        .expect("should be able to inspect pg_search's default version")
+    });
     let mut pass_context = pgrx::PgMemoryContexts::new("pg_search mutable sweep pass");
     let mut next_sweep = Instant::now();
     let mut interval = INTERVAL_MS.get();
@@ -230,7 +240,7 @@ unsafe extern "C-unwind" fn mutable_sweep_database(database: pg_sys::Datum) {
                         "SELECT max(extversion::text) FROM pg_catalog.pg_extension WHERE extname = 'pg_search'",
                     )
                     .expect("should be able to inspect pg_search version");
-                    if version.as_deref() != Some(env!("CARGO_PKG_VERSION")) {
+                    if version.is_none() || version != expected_version {
                         return None;
                     }
                     let indexes = Spi::get_one::<Vec<pg_sys::Oid>>(

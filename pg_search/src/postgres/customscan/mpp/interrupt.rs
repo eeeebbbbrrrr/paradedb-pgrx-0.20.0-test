@@ -913,7 +913,7 @@ pub(crate) fn check_for_cancel() -> Result<(), DataFusionError> {
 #[cfg(not(test))]
 pub(crate) fn check_for_interrupts_or_cancel() -> bool {
     if unsafe { pgrx::pg_sys::InterruptHoldoffCount == 0 && pgrx::pg_sys::CritSectionCount == 0 } {
-        pgrx::check_for_interrupts!();
+        pgrx::check_for_interrupts();
         false
     } else {
         cancel_pending()
@@ -937,7 +937,7 @@ pub(crate) fn check_for_interrupts() {
             pgrx::pg_sys::InterruptPending = 1;
         }
     }
-    pgrx::check_for_interrupts!();
+    pgrx::check_for_interrupts();
 }
 
 #[cfg(test)]
